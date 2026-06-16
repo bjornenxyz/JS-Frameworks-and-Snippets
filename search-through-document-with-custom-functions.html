@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Search Document</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,minimum-scale=1">
+<style>
+::highlight(search-results) {
+background-color: #fef08a;
+color: #854d0e;
+}
+::highlight(current-match) {
+background-color: #f97316;
+color: #ffffff;
+font-weight: bold;
+}
+.search-highlight {
+max-width: 100%;
+margin: 0 auto;
+}
+.search-wrapper {
+position: sticky;
+top: 0;
+z-index: 1000;
+margin-bottom: 20px;
+display: flex;
+align-items: center;
+}
+#searchBox {
+width: 100%;
+padding: 10px 250px 10px 10px;
+border: 1px solid #d1d5db;
+border-radius: 8px;
+font-size: 1rem;
+box-sizing: border-box;
+}
+#clearBtn {
+position: absolute;
+right: 225px;
+background: none;
+border: none;
+font-size: 1.25rem;
+color: #9ca3af;
+cursor: pointer;
+display: none;
+align-items: center;
+justify-content: center;
+padding: 0 4px;
+}
+#clearBtn:hover {
+color: #374151;
+}
+.search-controls {
+position: absolute;
+right: 10px;
+display: flex;
+align-items: center;
+gap: 8px;
+background-color: #ffffff;
+padding: 2px;
+border-radius: 6px;
+}
+.match-case-label {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+font-size: 0.85rem;
+color: #374151;
+cursor: pointer;
+user-select: none;
+border-right: 1px solid #e5e7eb;
+padding-right: 8px;
+}
+.match-case-label input {
+cursor: pointer;
+}
+#searchCounter {
+font-size: 0.85rem;
+color: #6b7280;
+padding: 0 4px;
+white-space: nowrap;
+}
+.search-controls button {
+background: none;
+border: 1px solid #e5e7eb;
+border-radius: 4px;
+width: 28px;
+height: 28px;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: 0.9rem;
+color: #374151;
+transition: background-color 0.2s;
+}
+.search-controls button:hover {
+background-color: #f3f4f6;
+}
+.search-controls button:disabled {
+opacity: 0.4;
+cursor: not-allowed;
+}
+#contentArea {
+line-height: 1.5;
+color: #222;
+}
+#contentArea h1 {
+margin-bottom: 20px;
+color: #555;
+}
+#contentArea p {
+font-size: 18px;
+margin: 15px;
+}
+</style>
+</head>
+<body>
+<div class="search-highlight">
+<div class="search-wrapper">
+<input type="text" id="searchBox" placeholder="Skriv för att söka...">
+<button id="clearBtn" type="button" aria-label="Rensa sökning">&times;</button>
+<div class="search-controls">
+<label class="match-case-label">
+<input type="checkbox" id="matchCaseCheckbox"> Aa </label>
+<span id="searchCounter">0 / 0</span>
+<button id="prevBtn" type="button" aria-label="Föregående">&uarr;</button>
+<button id="nextBtn" type="button" aria-label="Nästa">&darr;</button>
+</div>
+</div>
+<div id="contentArea">
+<h1>Välkommen till vår dokumentsida</h1>
+<p>Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since 1966, when designers at Letraset and James Mosley, the librarian at St Bride Printing Library in London, took a 1914 Cicero translation and scrambled it to make dummy text for Letraset's Body Type sheets. It has survived not only many decades, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised thanks to these sheets and more recently with desktop publishing software including versions of Lorem Ipsum.</p>
+<p>Här är en till paragraf där vi testar sökfunktionen. Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+<div>
+<p>Det fungerar även i nästlade element och paragrafer längre ner i dokumentet.</p>
+</div>
+</div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+const searchBox = document.getElementById('searchBox');
+const contentArea = document.getElementById('contentArea');
+const searchCounter = document.getElementById('searchCounter');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const matchCaseCheckbox = document.getElementById('matchCaseCheckbox');
+const clearBtn = document.getElementById('clearBtn');
+if (!searchBox || !contentArea || !searchCounter || !prevBtn || !nextBtn || !matchCaseCheckbox || !clearBtn) return;
+let ranges = [];
+let currentIndex = -1;
+const debounce = (fn, delay) => {
+let timeoutId;
+return (...args) => {
+clearTimeout(timeoutId);
+timeoutId = setTimeout(() => fn(...args), delay);
+};
+};
+const escapeRegExp = (string) => {
+return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+const updateUI = () => {
+clearBtn.style.display = searchBox.value.length > 0 ? 'flex' : 'none';
+if (ranges.length === 0) {
+searchCounter.textContent = '0 / 0';
+prevBtn.disabled = true;
+nextBtn.disabled = true;
+if (CSS.highlights) {
+CSS.highlights.delete('current-match');
+}
+return;
+}
+prevBtn.disabled = false;
+nextBtn.disabled = false;
+searchCounter.textContent = `${currentIndex + 1} / ${ranges.length}`;
+if (!CSS.highlights) return;
+const currentRange = ranges[currentIndex];
+const currentHighlight = new Highlight(currentRange);
+CSS.highlights.set('current-match', currentHighlight);
+const rect = currentRange.getBoundingClientRect();
+if (rect.top < 0 || rect.bottom > window.innerHeight) {
+window.scrollBy({
+top: rect.top - window.innerHeight / 2,
+behavior: 'smooth'
+});
+}};
+const getTextNodes = (root) => {
+const nodes = [];
+const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+let node;
+while (node = walker.nextNode()) {
+if (node.textContent.trim().length > 0) {
+nodes.push(node);
+}}
+return nodes;
+};
+const performSearch = () => {
+const query = searchBox.value.trim();
+ranges = [];
+currentIndex = -1;
+if (!CSS.highlights) return;
+CSS.highlights.clear();
+if (!query) {
+updateUI();
+return;
+}
+const escapedQuery = escapeRegExp(query);
+const flags = matchCaseCheckbox.checked ? 'g' : 'gi';
+const regex = new RegExp(escapedQuery, flags);
+const textNodes = getTextNodes(contentArea);
+textNodes.forEach(node => {
+const text = node.textContent;
+let match;
+while ((match = regex.exec(text)) !== null) {
+const range = new Range();
+range.setStart(node, match.index);
+range.setEnd(node, match.index + query.length);
+ranges.push(range);
+}
+});
+if (ranges.length > 0) {
+currentIndex = 0;
+const highlight = new Highlight(...ranges);
+CSS.highlights.set('search-results', highlight);
+}
+updateUI();
+};
+const resetSearch = () => {
+searchBox.value = '';
+ranges = [];
+currentIndex = -1;
+if (CSS.highlights) {
+CSS.highlights.clear();
+}
+updateUI();
+};
+const handleNext = () => {
+if (ranges.length === 0) return;
+currentIndex = (currentIndex + 1) % ranges.length;
+updateUI();
+};
+const handlePrev = () => {
+if (ranges.length === 0) return;
+currentIndex = (currentIndex - 1 + ranges.length) % ranges.length;
+updateUI();
+};
+prevBtn.addEventListener('click', handlePrev);
+nextBtn.addEventListener('click', handleNext);
+clearBtn.addEventListener('click', resetSearch);
+matchCaseCheckbox.addEventListener('change', performSearch);
+searchBox.addEventListener('keydown', (e) => {
+if (e.key === 'Enter') {
+e.preventDefault();
+if (e.shiftKey) {
+handlePrev();
+} else {
+handleNext();
+}} else if (e.key === 'Escape') {
+e.preventDefault();
+resetSearch();
+}});
+searchBox.addEventListener('input', debounce(performSearch, 150));
+updateUI();
+});
+</script>
+</body>
+</html>
